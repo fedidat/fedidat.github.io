@@ -1,0 +1,193 @@
+﻿<!DOCTYPE html>
+<!--[if IE 8 ]><html class="ie ie8" lang="en"> <![endif]-->
+<!--[if (gte IE 9)|!(IE)]><!-->
+<html lang="en">
+<!--<![endif]-->
+	<head>
+            <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <meta name="author" content="Ben Fedidat">
+
+		<link rel="icon" href="favicon.png?" type="image/x-icon">
+
+
+        <title>Ben's corner - OpenShift ConfigMap without overwriting the entire folder</title>
+
+
+        <!-- CSS -->
+        <link rel="stylesheet" href="/theme/css/style.css">
+
+        <!-- Custom CSS -->
+        	<link rel="stylesheet" href="/theme/css/colors/blue.css" id="colors">
+
+        <!-- Code highlight color scheme -->
+            <link href="/theme/css/code_blocks/darkly.css" rel="stylesheet">
+
+
+        <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+        <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+        <!--[if lt IE 9]>
+            <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+            <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+        <![endif]-->
+
+
+
+
+        <meta name="tags" contents="devops" />
+
+	                <meta property="og:locale" content="">
+		<meta property="og:site_name" content="Ben's corner">
+
+	<meta property="og:type" content="article">
+	<meta property="article:author" content="">
+	<meta property="og:url" content="/openshift-partial-configmaps.html">
+	<meta property="og:title" content="OpenShift ConfigMap without overwriting the entire folder">
+	<meta property="og:description" content="">
+	   <meta property="og:image" content="/images/guilherme-toti.jpg">
+	<meta property="article:published_time" content="2018-04-17 19:34:00+03:00">
+	</head>
+	<body>
+		<header id="header">
+			<!-- Container -->
+			<div class="container">
+				<!-- Logo / Mobile Menu -->
+				<div class="five columns">
+					<div id="textlogo">
+						<h1><a href="/">Ben's corner</a></h1>
+					</div>
+				</div>
+						<!-- Navigation
+				================================================== -->
+				<div class="eleven columns">
+
+					<nav id="navigation" class="menu">
+						<ul id="responsive">
+
+							<li><a href="/">Home</a></li>
+
+
+							        <li><a href="/pages/about.html">About</a></li>
+						</ul>
+					</nav>
+				</div>
+			</div>
+			<!-- Container / End -->
+		</header>
+		<!-- Header / End -->
+
+		<!-- Breadcrumbs Container-->
+		<div id="content-wrapper">
+			<section id="titlebar">
+				<!-- Container -->
+				<div class="container">
+				<div class="thirteen columns">
+					<nav id="breadcrumbs">
+						<ul>
+							<li>You are here:</li>
+							<li><a href="/">Home</a></li>
+<li><a href="/category/programming.html">programming</a></li>
+<li>OpenShift ConfigMap without overwriting the entire folder</li>
+						</ul>
+					</nav>
+				</div>
+				</div>
+				<!-- Container / End -->
+			</section>
+
+			<div class="container">
+	<div class="twelve alt columns">
+<article class="post" style="margin: 0; border: 0;">
+
+	<div class="post-format">
+		<div class="circle"><i class="icon-pencil"></i><span></span></div>
+	</div>
+
+	<section class="post-content">
+
+		<header class="meta">
+			<h2><a href="/openshift-partial-configmaps.html">OpenShift ConfigMap without overwriting the entire folder</a></h2>
+			<ul>
+				<li>By <a href="/author/ben-fedidat.html">Ben Fedidat</a></li>
+				<li>Tue 17 April 2018</li>
+				    <li>Updated on Tue 17 April 2018</li>
+			</ul>
+		</header>
+
+		<p>Openshift is great... or rather, Kubernetes is. At least if you don't
+need Openshift's building features but only the orchestration part.
+Although I'm hopeful it will become a very solid and open-source
+platform with Red Hat's backing and robust ecosystem.</p>
+<p>So I'll write about one trick I've learned recently. </p>
+<p>I think ConfigMaps are very practical. Picture this: you get one source of configuration accross your entire deployment, updated instantly accross all your pods, and all this backed by a YAML format that can be updated in your CLI if you are so inclined. This is a feature <a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/">originally provided by Kubernetes</a>.</p>
+<p>While it could easily do with more features, such as integrated version control, it does have one quirk: it uses good old Linux mounts. This means that whatever folder it is mounted to is obliterated from its container to make some room.</p>
+<p>But what if your system recently ported to Openshift has some configuration that doesn't exactly fit the ConfigMap, such as binaries? Or your configuration folder happens to also host your logs, or perhaps your libraries sit in the same folder? Or you want to put some application.properties files next to your JAR to use the property that they will override the ones inside of it? Well, in principle you can't do any of these, at least not easily or not without compromise since partial mounts ("subPaths") <a href="https://github.com/kubernetes/kubernetes/issues/50345">are not continuously updated after mounting</a>.</p>
+<p>But there is one solution: <strong>mount your ConfigMap then overwrite each pre-existing file with a softlink to the file in the Map</strong>.  One the one hand, the mount will exist fully and be constantly updated. On the other hand, your files not present in the ConfigMap, such as JARs or binaries, will still be in your original folder. Then, every time your application reads from these files, it will actually read from the softlink. While simple in restrospect, it took me time to figure.</p>
+<p>I put this in my Dockerfile because of some problems with users in Openshift, but you could put it in your startup script and anything that gets executed at the right time in your pod:</p>
+<div class="highlight"><pre><span class="nv">CMDIR</span><span class="o">=</span>/usr/user/configmap
+<span class="nv">APPDIR</span><span class="o">=</span>/usr/user/app
+<span class="k">if</span> <span class="o">[</span> ! -z $USE_CONFIG_MAP <span class="o">]</span> <span class="o">&amp;&amp;</span> <span class="o">[</span> $<span class="nv">USE_CONFIG_MAP</span> <span class="o">=</span> <span class="s1">&#39;Y&#39;</span> <span class="o">]</span> <span class="o">&amp;&amp;</span> <span class="o">[</span> <span class="s2">&quot;</span><span class="k">$(</span>ls -A <span class="nv">$C</span>MDIR<span class="k">)</span><span class="s2">&quot;</span> <span class="o">]</span><span class="p">;</span> <span class="k">then</span>
+    <span class="k">for</span> f in <span class="sb">`</span>ls <span class="nv">$C</span>MDIR<span class="sb">`</span><span class="p">;</span> <span class="k">do</span>
+        <span class="nb">echo</span> Mapping <span class="nv">$C</span>MDIR/<span class="nv">$f</span> to <span class="nv">$A</span>PPDIR/<span class="nv">$f</span>
+        rm -f <span class="nv">$A</span>PPDIR/<span class="nv">$f</span>
+        ln -s <span class="nv">$C</span>MDIR/<span class="nv">$f</span> <span class="nv">$A</span>PPDIR/<span class="nv">$f</span>
+    <span class="k">done</span><span class="p">;</span>
+<span class="k">fi</span>
+</pre></div>
+
+
+<p>And that works! The only problem with it is that it won't automatically add new files from your ConfigMap. But you could do it from the terminal if you insist on not deploying again.</p>
+		    <div class="tags">
+		        <p>tags: <a href="/tag/devops.html">devops</a></p>
+		    </div>
+
+<div class="sharing">
+</div>
+<hr>
+
+	</section>
+	<div class="clearfix"></div>
+
+</article>
+
+	</div>
+
+	<!-- Sidebar -->
+	<div class="four columns">
+
+		
+	</div>
+			</div>
+			<!-- Container / End -->
+		</div>
+		<!-- Content Wrapper / End -->
+
+		<div id="footer-bottom">
+			<!-- Container -->
+			<div class="container">
+				<div class="eight columns">&copy;  || Blog powered by <a href="http://getpelican.com">Pelican</a></div>
+					<div class="eight columns">
+						<ul class="social-icons-footer">
+								<li>
+									<a href="https://www.linkedin.com/in/fedidat" class="tooltip top" title="linkedin">
+										<i class="icon-linkedin"></i>
+									</a>
+								</li>
+								<li>
+									<a href="https://github.com/fedidat" class="tooltip top" title="github">
+										<i class="icon-github"></i>
+									</a>
+								</li>
+							<li><a href="/None" class="tooltip top" title="RSS"><i class="icon-rss"></i></a></li>
+						</ul>
+					</div>
+			</div>
+			<!-- Container / End -->
+		</div>
+		<!-- Footer Bottom / End -->
+
+	<!-- Javascripts -->
+	<script src="/theme/js/jquery.min.js"></script>
+	</body>
+</html>
